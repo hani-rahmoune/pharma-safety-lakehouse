@@ -1,0 +1,76 @@
+version: "3.8"
+
+x-airflow-common:
+  &airflow-common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nfdstY="
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    PYTHONPATH: /app
+  env_file:
+    - ../.env
+  volumes:
+    - ../dags:/app/dags
+    - ../src:/app/src
+    - ../data:/app/data
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  airflow-init:
+      <<: *airflow-common
+      command: bash -c "airflow db init && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin"
+      restart: on-failure
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: airflow scheduler
+    restart: always
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri /mlruns
+        --default-artifact-root /mlruns
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlruns:/mlruns
+
+volumes:
+  postgres_data:
+  airflow_logs:
+  mlruns:
