@@ -9,3 +9,6 @@ mlruns/
 .pytest_cache/
 data/silver/
 *.crc
+
+data/silver/
+*.crc
