@@ -14,3 +14,6 @@ data/silver/
 *.crc
 
 data/gold/
+
+secrets/
+*.json
