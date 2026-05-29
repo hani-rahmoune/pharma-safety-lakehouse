@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def binary_openfda_flag(column_name: str):
     """
-    Convert OpenFDA coded seriousness flags to analytics-ready binary values.
+    Convert OpenFDA coded flags to analytics-ready binary values.
 
     OpenFDA uses:
     - 1 = yes
@@ -29,7 +29,41 @@ def binary_openfda_flag(column_name: str):
     return (
         F.when(value == 1, F.lit(1))
         .when(value == 2, F.lit(0))
-        .otherwise(F.lit(None))
+        .otherwise(F.lit(None).cast(IntegerType()))
+        .cast(IntegerType())
+    )
+
+
+def patient_age_in_years(age_column: str, unit_column: str):
+    """
+    Convert OpenFDA patient onset age to integer years.
+
+    OpenFDA patientonsetageunit:
+    - 800 = decade
+    - 801 = year
+    - 802 = month
+    - 803 = week
+    - 804 = day
+    - 805 = hour
+
+    Values outside 0-120 are treated as invalid and set to null.
+    """
+    age = F.col(age_column).cast("double")
+    unit = F.col(unit_column).cast("string")
+
+    age_years = (
+        F.when(unit == "800", age * 10)
+        .when(unit == "801", age)
+        .when(unit == "802", age / 12)
+        .when(unit == "803", age / 52.1429)
+        .when(unit == "804", age / 365.25)
+        .when(unit == "805", age / 8766)
+        .otherwise(age)
+    )
+
+    return (
+        F.when((age_years >= 0) & (age_years <= 120), age_years.cast(IntegerType()))
+        .otherwise(F.lit(None).cast(IntegerType()))
         .cast(IntegerType())
     )
 
@@ -39,16 +73,14 @@ def read_bronze_json(spark: SparkSession, year: int, month: int):
     Read the raw bronze JSON file into a Spark DataFrame.
 
     multiLine=True tells Spark the entire file is one JSON array,
-    not one JSON object per line. Without this, Spark would try to
-    read each line as a separate record and fail on our array format.
+    not one JSON object per line.
     """
     partition = f"year={year}/month={str(month).zfill(2)}"
     path = str(Path(BRONZE_LOCAL_PATH) / partition / "events.json")
 
     logger.info("Reading bronze data from %s", path)
 
-    df = spark.read.option("multiLine", "true").json(path)
-    return df
+    return spark.read.option("multiLine", "true").json(path)
 
 
 def build_silver_adverse_events(df):
@@ -57,14 +89,6 @@ def build_silver_adverse_events(df):
 
     One row per adverse-event report. Contains report-level fields:
     dates, seriousness flags, country, and patient demographics.
-
-    Transformations:
-    - receivedate string YYYYMMDD parsed into a proper date column
-    - OpenFDA seriousness flags mapped from 1/2 codes to binary 1/0 values
-    - patient sex numeric codes mapped to readable labels
-    - patient age cast to integer
-    - duplicate safety_report_id values removed
-    - rows with null safety_report_id dropped
     """
     sex_mapping = F.create_map(
         F.lit("0"),
@@ -85,6 +109,7 @@ def build_silver_adverse_events(df):
             F.col("primarysourcecountry").alias("country"),
             F.col("patient.patientsex").alias("raw_sex"),
             F.col("patient.patientonsetage").alias("raw_age"),
+            F.col("patient.patientonsetageunit").alias("raw_age_unit"),
         )
         .withColumn("report_date", F.to_date(F.col("receivedate"), "yyyyMMdd"))
         .withColumn("is_serious", binary_openfda_flag("serious"))
@@ -93,8 +118,8 @@ def build_silver_adverse_events(df):
             "hospitalization",
             binary_openfda_flag("seriousnesshospitalization"),
         )
-        .withColumn("patient_sex", sex_mapping[F.col("raw_sex")])
-        .withColumn("patient_age", F.col("raw_age").cast(IntegerType()))
+        .withColumn("patient_sex", sex_mapping[F.col("raw_sex").cast("string")])
+        .withColumn("patient_age", patient_age_in_years("raw_age", "raw_age_unit"))
         .drop(
             "receivedate",
             "serious",
@@ -102,6 +127,7 @@ def build_silver_adverse_events(df):
             "seriousnesshospitalization",
             "raw_sex",
             "raw_age",
+            "raw_age_unit",
         )
         .dropDuplicates(["safety_report_id"])
         .filter(F.col("safety_report_id").isNotNull())
@@ -116,13 +142,6 @@ def build_silver_drugs(df):
 
     Explodes the patient.drug array so each drug gets its own row,
     all linked by safety_report_id.
-
-    explode_outer keeps reports with no drugs.
-
-    Drug role codes:
-        1 = Suspect
-        2 = Concomitant
-        3 = Interacting
     """
     role_mapping = F.create_map(
         F.lit("1"),
@@ -144,7 +163,7 @@ def build_silver_drugs(df):
             F.col("drug.drugcharacterization").alias("raw_role"),
             F.col("drug.drugindication").alias("indication"),
         )
-        .withColumn("drug_role", role_mapping[F.col("raw_role")])
+        .withColumn("drug_role", role_mapping[F.col("raw_role").cast("string")])
         .drop("raw_role")
         .filter(F.col("drug_name").isNotNull())
         .filter(F.trim(F.col("drug_name")) != "")
@@ -158,11 +177,6 @@ def build_silver_reactions(df):
     Create the silver_reactions table.
 
     Explodes the patient.reaction array so each reaction gets its own row.
-
-    reactionmeddrapt is the MedDRA preferred term, a standardized medical
-    terminology used across the pharmacovigilance industry.
-
-    initcap converts PNEUMONIA to Pneumonia for cleaner display.
     """
     silver = (
         df.select(
@@ -186,11 +200,7 @@ def write_parquet(df, table_name: str):
     """
     Write a DataFrame to Parquet in the local silver layer.
 
-    Parquet is a columnar binary format. It is faster to read than JSON
-    because Spark can read only the columns it needs, and it stores
-    type information so Spark does not have to infer it each time.
-
-    overwrite makes the job idempotent, so it is safe to re-run.
+    overwrite makes the job idempotent.
     """
     output_path = str(Path(SILVER_LOCAL_PATH) / table_name)
 
@@ -202,11 +212,6 @@ def write_parquet(df, table_name: str):
 def run_bronze_to_silver(year: int, month: int):
     """
     Run the full bronze-to-silver transformation for a given month.
-
-    The count() calls are here and not inside the transformation
-    functions because count() triggers a full Spark job. Keeping them
-    here means tests can call the transformation functions without
-    triggering extra Spark jobs.
     """
     spark = get_spark_session("BronzeToSilver")
     raw_df = read_bronze_json(spark, year, month)
