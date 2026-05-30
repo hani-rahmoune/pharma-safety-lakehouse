@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-
 default_args = {
     "owner": "pharma-team",
     "depends_on_past": False,

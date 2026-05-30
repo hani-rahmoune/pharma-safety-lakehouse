@@ -1,10 +1,8 @@
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.ml.train_seriousness_model import (
     FEATURE_COLS,
-    TARGET_COL,
     compute_metrics,
     prepare_features,
 )

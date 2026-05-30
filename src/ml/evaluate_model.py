@@ -1,7 +1,6 @@
 import logging
 
 import mlflow
-import pandas as pd
 
 MLFLOW_TRACKING_URI = "http://localhost:5000"
 MLFLOW_EXPERIMENT_NAME = "seriousness_prediction"

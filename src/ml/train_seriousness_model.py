@@ -16,8 +16,6 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
-from src.utils.config import GOLD_LOCAL_PATH
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -45,7 +43,6 @@ def load_ml_features(path: str = "data/gold/ml_features") -> pd.DataFrame:
     1. Local Parquet file/folder if it exists.
     2. BigQuery gold table if local data is not available.
     """
-    from pathlib import Path
 
     local_path = Path(path)
 
@@ -53,7 +50,8 @@ def load_ml_features(path: str = "data/gold/ml_features") -> pd.DataFrame:
         return pd.read_parquet(local_path)
 
     from google.cloud import bigquery
-    from src.utils.config import GCP_PROJECT_ID, BIGQUERY_DATASET_GOLD
+
+    from src.utils.config import BIGQUERY_DATASET_GOLD, GCP_PROJECT_ID
 
     client = bigquery.Client(project=GCP_PROJECT_ID)
 
