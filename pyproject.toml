@@ -11,3 +11,6 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "spark: tests that require a running Spark session and data files",
+]

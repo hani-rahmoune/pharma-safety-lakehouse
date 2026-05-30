@@ -4,7 +4,13 @@ import sys
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
+if os.name == "nt":
+    os.environ.setdefault("HADOOP_HOME", "C:\\hadoop")
+
 import pytest  # noqa: E402
+
+pytestmark = pytest.mark.spark
+
 from pyspark.sql import SparkSession  # noqa: E402
 
 from src.spark_jobs.bronze_to_silver_events import (  # noqa: E402

@@ -1,26 +1,22 @@
 import os
 import sys
+from pathlib import Path
 
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-os.environ["HADOOP_HOME"] = "C:\\hadoop"
 
-from pathlib import Path
+if os.name == "nt":
+    os.environ.setdefault("HADOOP_HOME", "C:\\hadoop")
 
-import pandas as pd
-import pytest
-from pyspark.sql import SparkSession
+import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
 
-from src.spark_jobs.build_gold_tables import (
-    build_gold_drug_reaction_pairs,
-    build_gold_drug_summary,
-    build_gold_ml_features,
-    build_gold_monthly_trends,
-    build_gold_reaction_summary,
-    build_gold_safety_overview,
-    read_silver,
-)
-from src.utils.config import GOLD_LOCAL_PATH
+pytestmark = pytest.mark.spark
+
+from pyspark.sql import SparkSession  # noqa: E402
+
+from src.spark_jobs.build_gold_tables import read_silver  # noqa: E402
+from src.utils.config import GOLD_LOCAL_PATH  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -77,7 +73,12 @@ def test_safety_overview_seriousness_rate_is_between_0_and_100():
 
 def test_safety_overview_has_required_columns():
     df = read_gold("safety_overview")
-    required = ["total_reports", "serious_reports", "death_reports", "seriousness_rate_pct"]
+    required = [
+        "total_reports",
+        "serious_reports",
+        "death_reports",
+        "seriousness_rate_pct",
+    ]
     for col in required:
         assert col in df.columns, f"Missing column: {col}"
 
@@ -94,7 +95,14 @@ def test_monthly_trends_seriousness_rate_in_range():
 
 def test_monthly_trends_has_required_columns():
     df = read_gold("monthly_trends")
-    for col in ["year", "month", "total_reports", "serious_reports", "seriousness_rate_pct"]:
+    required = [
+        "year",
+        "month",
+        "total_reports",
+        "serious_reports",
+        "seriousness_rate_pct",
+    ]
+    for col in required:
         assert col in df.columns
 
 
@@ -116,7 +124,13 @@ def test_drug_summary_total_reports_positive():
 
 def test_drug_summary_has_required_columns():
     df = read_gold("drug_summary")
-    for col in ["drug_name", "total_reports", "serious_reports", "seriousness_rate_pct"]:
+    required = [
+        "drug_name",
+        "total_reports",
+        "serious_reports",
+        "seriousness_rate_pct",
+    ]
+    for col in required:
         assert col in df.columns
 
 
@@ -127,7 +141,13 @@ def test_reaction_summary_has_rows():
 
 def test_reaction_summary_has_required_columns():
     df = read_gold("reaction_summary")
-    for col in ["reaction_name", "total_reports", "serious_reports", "seriousness_rate_pct"]:
+    required = [
+        "reaction_name",
+        "total_reports",
+        "serious_reports",
+        "seriousness_rate_pct",
+    ]
+    for col in required:
         assert col in df.columns
 
 
@@ -149,7 +169,14 @@ def test_drug_reaction_pairs_seriousness_rate_in_range():
 
 def test_drug_reaction_pairs_has_required_columns():
     df = read_gold("drug_reaction_pairs")
-    for col in ["drug_name", "reaction_name", "pair_count", "serious_count", "seriousness_rate_pct"]:
+    required = [
+        "drug_name",
+        "reaction_name",
+        "pair_count",
+        "serious_count",
+        "seriousness_rate_pct",
+    ]
+    for col in required:
         assert col in df.columns
 
 
@@ -176,7 +203,14 @@ def test_ml_features_has_suspect_drug_is_binary():
 
 def test_ml_features_has_required_columns():
     df = read_gold("ml_features")
-    for col in ["safety_report_id", "is_serious", "num_drugs", "num_reactions", "has_suspect_drug"]:
+    required = [
+        "safety_report_id",
+        "is_serious",
+        "num_drugs",
+        "num_reactions",
+        "has_suspect_drug",
+    ]
+    for col in required:
         assert col in df.columns
 
 
@@ -188,4 +222,5 @@ def test_gold_drug_summary_row_count_less_than_silver_drugs(events, drugs):
     """
     silver_count = drugs.select("drug_name").distinct().count()
     gold_df = read_gold("drug_summary")
+
     assert len(gold_df) <= silver_count
