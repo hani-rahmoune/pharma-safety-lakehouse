@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-airflow-common:
   &airflow-common
   build:
@@ -11,13 +9,15 @@ x-airflow-common:
     AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nfdstY="
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_FOLDER: /app/dags
     PYTHONPATH: /app
   env_file:
     - ../.env
   volumes:
     - ../dags:/app/dags
     - ../src:/app/src
-    - ../data:/app/data
+    - pipeline_data:/app/data
+    - ../secrets:/app/secrets
     - airflow_logs:/opt/airflow/logs
   depends_on:
     postgres:
@@ -41,9 +41,17 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   airflow-init:
-      <<: *airflow-common
-      command: bash -c "airflow db init && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin"
-      restart: on-failure
+    <<: *airflow-common
+    command: >
+      bash -c "airflow db migrate &&
+      airflow users create
+      --username admin
+      --firstname Admin
+      --lastname User
+      --role Admin
+      --email admin@example.com
+      --password admin || true"
+    restart: on-failure
 
   airflow-webserver:
     <<: *airflow-common
@@ -61,10 +69,10 @@ services:
     image: ghcr.io/mlflow/mlflow:v2.13.0
     command: >
       mlflow server
-        --host 0.0.0.0
-        --port 5000
-        --backend-store-uri /mlruns
-        --default-artifact-root /mlruns
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri /mlruns
+      --default-artifact-root /mlruns
     ports:
       - "5000:5000"
     volumes:
@@ -74,3 +82,4 @@ volumes:
   postgres_data:
   airflow_logs:
   mlruns:
+  pipeline_data:
