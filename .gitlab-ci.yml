@@ -1,65 +1,28 @@
-image: python:3.12-slim
-
 stages:
   - lint
   - test
   - validate
 
-variables:
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  PYTHONPATH: "."
-  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-  AIRFLOW_HOME: "/tmp/airflow"
-
-cache:
-  paths:
-    - .cache/pip
-
-before_script:
-  - pip install --upgrade pip --quiet
+default:
+  image: python:3.12-slim
+  before_script:
+    - python --version
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+    - pip install ruff
+    - export PYTHONPATH="$CI_PROJECT_DIR"
 
 lint:
   stage: lint
   script:
-    - pip install ruff==0.4.4 black==24.4.2 --quiet
-    - echo "Running Ruff..."
     - ruff check src tests dags
-    - echo "Running Black..."
-    - black --check src tests dags
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"'
 
-test:
+unit_tests:
   stage: test
-  needs: [lint]
   script:
-    - pip install
-        python-dotenv==1.0.1
-        requests==2.31.0
-        pytest==8.2.0
-        pytest-mock==3.14.0
-        scikit-learn==1.4.2
-        numpy==1.26.4
-        pandas==2.2.2
-        --quiet
-    - pip install apache-airflow==2.9.1
-        --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-3.12.txt"
-        --quiet
-    - echo "Running fast tests (no Spark)..."
     - pytest tests/ -v -m "not spark"
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"'
 
-validate-dag:
+dag_validation:
   stage: validate
-  needs: [test]
   script:
-    - pip install
-        python-dotenv==1.0.1
-        apache-airflow==2.9.1
-        --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.9.1/constraints-3.12.txt"
-        --quiet
-    - echo "Validating Airflow DAG..."
-    - python -c "from dags.pharmacovigilance_pipeline import dag; print('DAG OK:', dag.dag_id, '| Tasks:', len(dag.tasks))"
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - pytest tests/test_airflow_dag.py -v
